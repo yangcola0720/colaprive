@@ -20,12 +20,20 @@ def check_password():
         return True
 
     st.markdown("## 🔒 管理後台")
+
+    if "admin" not in st.secrets or "password" not in st.secrets.get("admin", {}):
+        st.error(
+            "⚠️ 尚未設定管理後台密碼。"
+            "請在 Streamlit Cloud 的 App Settings > Secrets 中新增 `admin.password`，"
+            "或本機建立 `.streamlit/secrets.toml`。"
+        )
+
     pwd = st.text_input("請輸入管理密碼", type="password", key="admin_pwd_input")
     if st.button("登入", use_container_width=True):
-        correct = st.secrets.get("admin", {}).get("password", "admin1234")
-        st.write("DEBUG: current cwd=", os.getcwd())
-        st.write("DEBUG: admin secret loaded=", bool(correct), "length=", len(correct))
-        if pwd == correct:
+        correct = st.secrets.get("admin", {}).get("password")
+        if not correct:
+            st.error("請先設定管理密碼，才能登入。")
+        elif pwd == correct:
             st.session_state["admin_authed"] = True
             st.rerun()
         else:
@@ -42,6 +50,7 @@ if not is_configured():
     st.error(
         "⚠️ **尚未設定 Google Sheets 連線**\n\n"
         "請先完成 Streamlit Secrets 設定（參考設定說明）。"
+        "\n\n如果你是在 Streamlit Cloud，請到 App Settings 的 Secrets 中新增對應設定。"
     )
     st.stop()
 
