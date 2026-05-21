@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>英文搶答計分系統</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { width: 100%; height: 100%; background: #0a0e1a; }
+body { overflow-x: hidden; }
+#root { display: flex; flex-direction: column; }
+@keyframes celebAnim { 0% { transform: scale(1) rotate(0deg); } 20% { transform: scale(1.1) rotate(-2deg); } 50% { transform: scale(1.08) rotate(2deg); } 100% { transform: scale(1) rotate(0deg); } }
+@keyframes redFlash { 0%,100% { background: rgba(220,38,38,0); } 50% { background: rgba(220,38,38,0.45); } }
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes slideUp { from { opacity:0; transform:translateY(30px); } to { opacity:1; transform:translateY(0); } }
+@keyframes scorePopup { 0% { opacity:1; transform:translate(-50%,-10px) scale(1.2); } 100% { opacity:0; transform:translate(-50%,-52px) scale(1.5); } }
+.celeb-anim { animation: celebAnim 0.85s ease-out; }
+.flash-overlay { animation: redFlash 0.48s ease-in-out 6; }
+.fade-in { animation: fadeIn 0.32s ease-out; }
+.slide-up { animation: slideUp 0.5s ease-out both; }
+.score-popup { position:absolute; top:0; left:50%; animation: scorePopup 0.75s ease-out forwards; pointer-events:none; font-weight:900; font-size:1.4rem; text-shadow:0 2px 8px rgba(0,0,0,0.6); white-space:nowrap; z-index:10; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius:3px; }
+input, textarea { outline: none; font-family: inherit; }
+button { font-family: inherit; transition: filter 0.15s, transform 0.1s; }
+button:not(:disabled):hover { filter: brightness(1.12); }
+button:not(:disabled):active { transform: scale(0.96); }
+#confetti-canvas { position:fixed; inset:0; pointer-events:none; z-index:9999; width:100vw; height:100vh; }
+</style>
+</head>
+<body>
+<canvas id="confetti-canvas"></canvas>
+<div id="root"></div>
+<script>window.INJECTED_QUESTIONS = __QUESTIONS_JSON__;</script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+const ABC = ['A','B','C','D'];
+const CC = ['#FF6B6B','#4ECDC4','#45B7D1','#FED766','#2AB7CA','#F18F01','#C0EDA6','#FF85A1','#A29BFE','#74B9FF','#55efc4','#fdcb6e'];
+const GBG = ['#1a3a8f','#065f46','#581c87','#92400e','#831843','#164e63','#1e3a5f','#3d1f00','#2d1b69','#1a4731'];
+const GGL = ['#3b82f6','#10b981','#a855f7','#f59e0b','#ec4899','#06b6d4','#60a5fa','#fb923c','#818cf8','#34d399'];
+let _uid = 1000;
+const uid = () => ++_uid;
+
+function launchConfetti() {
+  const c = document.getElementById('confetti-canvas');
+  if (!c) return;
+  c.width = window.innerWidth; c.height = window.innerHeight;
+  const ctx = c.getContext('2d');
+  let ps = Array.from({length:160}, ()=>({ x:Math.random()*c.width, y:-10-Math.random()*200, vx:(Math.random()-0.5)*10, vy:Math.random()*6+2, s:Math.random()*11+4, cl:CC[Math.floor(Math.random()*CC.length)], r:Math.random()*360, rv:(Math.random()-0.5)*16, isRect:Math.random()>0.4 }));
+  let raf;
+  const step = () => {
+    ctx.clearRect(0,0,c.width,c.height);
+    ps = ps.filter(p=>p.y<c.height+30);
+    if(!ps.length) return;
+    ps.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.1; p.r+=p.rv; ctx.save(); ctx.globalAlpha = Math.min(1,Math.max(0,1-p.y/(c.height*0.92))); ctx.translate(p.x,p.y); ctx.rotate(p.r*Math.PI/180); ctx.fillStyle=p.cl; if(p.isRect) ctx.fillRect(-p.s/2,-p.s/4,p.s,p.s*0.5); else{ctx.beginPath();ctx.ellipse(0,0,p.s/2,p.s/3,0,0,Math.PI*2);ctx.fill();} ctx.restore(); });
+    raf=requestAnimationFrame(step);
+  };
+  step();
+  setTimeout(()=>{cancelAnimationFrame(raf);ctx.clearRect(0,0,c.width,c.height);},5000);
+}
+
+function shuffle(arr) { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+function GroupCard({g,idx,celebId,popups,onScore,onRename,editId,setEditId,editName,setEditName,mode}){
+  const bg=GBG[idx%GBG.length], glow=GGL[idx%GGL.length];
+  const celeb=celebId===g.id, popup=popups[g.id];
+  if(mode==='mini') return (
+    <div className={celeb?'celeb-anim':''} style={{background:bg,borderRadius:9,padding:'6px 10px',border:`2px solid ${celeb?'#fbbf24':'transparent'}`,boxShadow:celeb?`0 0 16px ${glow}`:'none',transition:'box-shadow 0.3s,border-color 0.3s',display:'flex',alignItems:'center',gap:8,position:'relative'}}>
+      {popup&&<div key={popup.pid} className="score-popup" style={{color:popup.red?'#f87171':'#fbbf24',fontSize:'1.1rem'}}>{popup.text}</div>}
+      <div style={{flex:1,fontWeight:800,color:'#f9fafb',fontSize:'0.88rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{g.name}</div>
+      <div style={{fontFamily:'monospace',fontWeight:900,color:'#fff',fontSize:'1.35rem',minWidth:38,textAlign:'center'}}>{g.score}</div>
+      <button onClick={()=>onScore(g.id,-10)} style={{padding:'4px 9px',borderRadius:6,fontWeight:900,fontSize:'0.9rem',border:'none',cursor:'pointer',background:'rgba(0,0,0,0.4)',color:'rgba(255,255,255,0.9)'}}>−</button>
+      <button onClick={()=>onScore(g.id,10)} style={{padding:'4px 9px',borderRadius:6,fontWeight:900,fontSize:'0.9rem',border:'none',cursor:'pointer',background:'rgba(255,255,255,0.22)',color:'#fff'}}>＋</button>
+    </div>
+  );
+  if(mode==='compact') return (
+    <div className={celeb?'celeb-anim':''} style={{background:bg,borderRadius:11,padding:'10px 12px',border:`2px solid ${celeb?'#fbbf24':'transparent'}`,boxShadow:celeb?`0 0 22px ${glow}`:'none',transition:'box-shadow 0.3s,border-color 0.3s',position:'relative'}}>
+      {popup&&<div key={popup.pid} className="score-popup" style={{color:popup.red?'#f87171':'#fbbf24',fontSize:'1.2rem'}}>{popup.text}</div>}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+        <span style={{fontWeight:900,color:'#f9fafb',fontSize:'0.95rem',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.name}</span>
+        <span style={{fontFamily:'monospace',fontWeight:900,color:'#fff',fontSize:'1.9rem',marginLeft:8}}>{g.score}</span>
+      </div>
+      <div style={{display:'flex',gap:6}}>
+        <button onClick={()=>onScore(g.id,-10)} style={{flex:1,padding:'6px 0',borderRadius:8,fontWeight:900,fontSize:'0.9rem',border:'none',cursor:'pointer',background:'rgba(0,0,0,0.38)',color:'rgba(255,255,255,0.9)'}}>−10</button>
+        <button onClick={()=>onScore(g.id,10)} style={{flex:1,padding:'6px 0',borderRadius:8,fontWeight:900,fontSize:'0.9rem',border:'none',cursor:'pointer',background:'rgba(255,255,255,0.22)',color:'#fff'}}>＋10</button>
+      </div>
+    </div>
+  );
+  return (
+    <div className={celeb?'celeb-anim':''} style={{background:bg,borderRadius:13,padding:'12px 13px',border:`2px solid ${celeb?'#fbbf24':'transparent'}`,boxShadow:celeb?`0 0 28px ${glow},0 0 56px ${glow}55`:'none',transition:'box-shadow 0.3s,border-color 0.3s',position:'relative'}}>
+      {popup&&<div key={popup.pid} className="score-popup" style={{color:popup.red?'#f87171':'#fbbf24'}}>{popup.text}</div>}
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+        {editId===g.id?(
+          <><input value={editName} onChange={e=>setEditName(e.target.value)} style={{flex:1,padding:'4px 8px',borderRadius:6,background:'#fff',color:'#111',fontWeight:700,fontSize:'0.95rem',border:'none'}} autoFocus onKeyDown={e=>{if(e.key==='Enter'){onRename(g.id,editName);setEditId(null);}}}/>
+          <button onClick={()=>{onRename(g.id,editName);setEditId(null);}} style={{background:'rgba(255,255,255,0.25)',border:'none',borderRadius:6,color:'#fff',cursor:'pointer',padding:'4px 8px',fontWeight:700}}>✓</button></>
+        ):(
+          <><span style={{flex:1,fontWeight:900,color:'#f9fafb',fontSize:'1rem'}}>{g.name}</span>
+          <button onClick={()=>{setEditId(g.id);setEditName(g.name);}} style={{background:'rgba(255,255,255,0.1)',border:'none',borderRadius:6,color:'rgba(255,255,255,0.7)',cursor:'pointer',padding:'3px 7px',fontSize:'0.8rem'}}>✏</button></>
+        )}
+      </div>
+      <div style={{textAlign:'center',margin:'2px 0 9px'}}>
+        <div style={{fontFamily:'monospace',fontWeight:900,color:'#fff',fontSize:'2.9rem',lineHeight:1}}>{g.score}</div>
+        <div style={{color:'rgba(255,255,255,0.5)',fontSize:'0.75rem',fontWeight:700}}>分</div>
+      </div>
+      <div style={{display:'flex',gap:7}}>
+        <button onClick={()=>onScore(g.id,-10)} style={{flex:1,padding:'8px 0',borderRadius:9,fontWeight:900,fontSize:'1rem',border:'none',cursor:'pointer',background:'rgba(0,0,0,0.38)',color:'rgba(255,255,255,0.9)'}}>−10</button>
+        <button onClick={()=>onScore(g.id,10)} style={{flex:1,padding:'8px 0',borderRadius:9,fontWeight:900,fontSize:'1rem',border:'none',cursor:'pointer',background:'rgba(255,255,255,0.22)',color:'#fff'}}>＋10</button>
+      </div>
+    </div>
+  );
+}
+
+function SetupScreen({onStart}){
+  const allQ = window.INJECTED_QUESTIONS || [];
+  const [groups,setGroups]=useState([{id:uid(),name:'第1組'},{id:uid(),name:'第2組'},{id:uid(),name:'第3組'},{id:uid(),name:'第4組'}]);
+  const [qCount,setQCount]=useState(Math.min(10,allQ.length));
+  const [batchText,setBatchText]=useState('');
+  const [showBatch,setShowBatch]=useState(false);
+  const [err,setErr]=useState('');
+  const quickCreate=n=>setGroups(Array.from({length:n},(_,i)=>({id:uid(),name:`第${i+1}組`})));
+  const addOne=()=>setGroups(gs=>[...gs,{id:uid(),name:`第${gs.length+1}組`}]);
+  const delGroup=id=>setGroups(gs=>gs.filter(g=>g.id!==id));
+  const rename=(id,name)=>setGroups(gs=>gs.map(g=>g.id===id?{...g,name}:g));
+  const applyBatch=()=>{ const names=batchText.split('\n').map(s=>s.trim()).filter(Boolean); if(!names.length) return; setGroups(names.map(name=>({id:uid(),name}))); setBatchText('');setShowBatch(false); };
+  const handleStart=()=>{ if(!groups.length){setErr('請至少設定一組！');return;} const qs=shuffle(allQ).slice(0,qCount); onStart(groups.map((g,i)=>({...g,score:0,colorIdx:i})),qs); };
+  return (
+    <div style={{minHeight:'100vh',background:'#0a0e1a',color:'#fff',padding:'28px 32px',fontFamily:"'Segoe UI',system-ui,sans-serif",overflowY:'auto'}}>
+      <div style={{textAlign:'center',marginBottom:28}}>
+        <div style={{fontSize:'2.4rem',fontWeight:900,color:'#fbbf24'}}>🏆 英文搶答計分系統</div>
+        <div style={{color:'#6b7280',fontSize:'1rem',marginTop:6}}>遊戲設定</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:22,maxWidth:1050,margin:'0 auto'}}>
+        <div style={{background:'#111827',borderRadius:16,padding:'20px 22px',border:'1px solid #1f2937'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+            <div style={{fontSize:'1.1rem',fontWeight:800,color:'#f9fafb'}}>小組設定</div>
+            <div style={{color:'#6b7280',fontSize:'0.88rem',fontWeight:600}}>共 {groups.length} 組</div>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{color:'#9ca3af',fontSize:'0.8rem',fontWeight:600,marginBottom:7}}>快速建立</div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {[4,8,16,32,40].map(n=>(<button key={n} onClick={()=>quickCreate(n)} style={{padding:'7px 16px',borderRadius:8,fontWeight:700,fontSize:'0.92rem',border:'1px solid #374151',cursor:'pointer',background:'#1f2937',color:'#d1d5db'}}>{n} 組</button>))}
+            </div>
+          </div>
+          <div style={{maxHeight:280,overflowY:'auto',marginBottom:11,display:'flex',flexDirection:'column',gap:6,paddingRight:2}}>
+            {groups.map((g,i)=>(
+              <div key={g.id} style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:28,height:28,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:GBG[i%GBG.length],fontSize:'0.75rem',fontWeight:700,color:'#fff'}}>{i+1}</div>
+                <input value={g.name} onChange={e=>rename(g.id,e.target.value)} style={{flex:1,padding:'6px 10px',borderRadius:7,background:'#1f2937',border:'1px solid #374151',color:'#f9fafb',fontSize:'0.95rem',fontWeight:600}}/>
+                <button onClick={()=>delGroup(g.id)} style={{padding:'5px 9px',borderRadius:7,border:'1px solid #374151',cursor:'pointer',background:'transparent',color:'#6b7280',fontSize:'1rem'}}>✕</button>
+              </div>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:8,marginBottom:10}}>
+            <button onClick={addOne} style={{flex:1,padding:'8px 0',borderRadius:9,fontWeight:700,fontSize:'0.9rem',border:'1px solid #374151',cursor:'pointer',background:'#1f2937',color:'#d1d5db'}}>＋ 新增一組</button>
+            <button onClick={()=>setShowBatch(b=>!b)} style={{flex:1,padding:'8px 0',borderRadius:9,fontWeight:700,fontSize:'0.9rem',border:`1px solid ${showBatch?'#3b82f6':'#374151'}`,cursor:'pointer',background:showBatch?'#1d4ed8':'#1f2937',color:'#d1d5db'}}>📋 批次輸入組名</button>
+          </div>
+          {showBatch&&(<div className="fade-in" style={{background:'#1a2035',borderRadius:10,padding:12,border:'1px solid #374151'}}><div style={{color:'#9ca3af',fontSize:'0.78rem',marginBottom:6}}>每行一個組名</div><textarea value={batchText} onChange={e=>setBatchText(e.target.value)} placeholder={"第1組\n第2組\n..."} rows={6} style={{width:'100%',padding:'8px',borderRadius:7,background:'#111827',border:'1px solid #374151',color:'#f9fafb',fontSize:'0.88rem',resize:'vertical',lineHeight:1.6}}/><button onClick={applyBatch} style={{marginTop:8,width:'100%',padding:'9px',borderRadius:8,fontWeight:800,fontSize:'0.95rem',border:'none',cursor:'pointer',background:'#2563eb',color:'#fff'}}>套用組名</button></div>)}
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div style={{background:'#111827',borderRadius:16,padding:'20px 22px',border:'1px solid #1f2937'}}>
+            <div style={{fontSize:'1.05rem',fontWeight:800,color:'#f9fafb',marginBottom:16}}>遊戲設定</div>
+            <div style={{marginBottom:18,padding:'12px 14px',background:'#1a2035',borderRadius:10,border:'1px solid #1f2937'}}>
+              <div style={{color:'#9ca3af',fontSize:'0.78rem',fontWeight:600,marginBottom:3}}>題庫狀態</div>
+              <div style={{color:'#4ade80',fontWeight:800,fontSize:'1.1rem'}}>✅ {allQ.length} 題可用</div>
+            </div>
+            <div>
+              <div style={{color:'#9ca3af',fontSize:'0.8rem',fontWeight:600,marginBottom:9}}>本場題數</div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {[5,10,15,20].filter(n=>n<=allQ.length).map(n=>(<button key={n} onClick={()=>setQCount(n)} style={{padding:'9px 20px',borderRadius:9,fontWeight:800,fontSize:'1rem',border:`2px solid ${qCount===n?'#3b82f6':'#374151'}`,cursor:'pointer',background:qCount===n?'#1d4ed8':'#1f2937',color:qCount===n?'#fff':'#9ca3af'}}>{n} 題</button>))}
+              </div>
+            </div>
+          </div>
+          {err&&<div style={{background:'#450a0a',border:'1px solid #991b1b',borderRadius:10,padding:'12px 14px',color:'#fca5a5',fontSize:'0.88rem'}}>{err}</div>}
+          <button onClick={handleStart} style={{padding:'18px 0',borderRadius:14,fontWeight:900,fontSize:'1.35rem',border:'none',cursor:'pointer',background:'#2563eb',color:'#fff',boxShadow:'0 4px 24px rgba(37,99,235,0.45)'}}>▶ 開始遊戲</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GameScreen({questions,groups:initGroups,onEnd}){
+  const [qIdx,setQIdx]=useState(0);
+  const [showAns,setShowAns]=useState(false);
+  const [timer,setTimer]=useState(15);
+  const [running,setRunning]=useState(false);
+  const [flash,setFlash]=useState(false);
+  const [groups,setGroups]=useState(()=>initGroups.map(g=>({...g,score:0})));
+  const [editId,setEditId]=useState(null);
+  const [editName,setEditName]=useState('');
+  const [celebId,setCelebId]=useState(null);
+  const [popups,setPopups]=useState({});
+  useEffect(()=>{ if(!running||timer<=0) return; const id=setTimeout(()=>{ const nv=timer-1; setTimer(nv); if(nv===0){setRunning(false);setFlash(true);} },1000); return ()=>clearTimeout(id); },[running,timer]);
+  useEffect(()=>{ if(!flash) return; const id=setTimeout(()=>setFlash(false),3200); return ()=>clearTimeout(id); },[flash]);
+  const resetTimer=()=>{setRunning(false);setTimer(15);setFlash(false);};
+  const scoreGroup=useCallback((id,delta)=>{
+    setGroups(gs=>gs.map(g=>g.id===id?{...g,score:Math.max(0,g.score+delta)}:g));
+    const pid=Date.now();
+    setPopups(p=>({...p,[id]:{pid,text:delta>0?'+10':'-10',red:delta<0}}));
+    setTimeout(()=>setPopups(p=>{const n={...p};delete n[id];return n;}),800);
+    if(delta>0){setCelebId(id);setTimeout(()=>setCelebId(null),900);launchConfetti();}
+  },[]);
+  const renameGroup=(id,name)=>setGroups(gs=>gs.map(g=>g.id===id?{...g,name}:g));
+  const nav=dir=>{const nq=Math.max(0,Math.min(questions.length-1,qIdx+dir));setQIdx(nq);setShowAns(false);resetTimer();};
+  const q=questions[qIdx];
+  const tColor=timer<=5?'#ef4444':timer<=10?'#f97316':'#22c55e';
+  const tShadow=timer<=5?'0 0 20px #ef444490':timer<=10?'0 0 20px #f9731690':'0 0 20px #22c55e50';
+  const n=groups.length;
+  const cardMode=n>20?'mini':n>8?'compact':'full';
+  return (
+    <div style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',background:'#0a0e1a',color:'#fff',fontFamily:"'Segoe UI',system-ui,sans-serif",userSelect:'none',overflow:'hidden'}}>
+      {flash&&<div className="flash-overlay" style={{position:'fixed',inset:0,zIndex:999,pointerEvents:'none'}}/>}
+      <div style={{background:'#111827',borderBottom:'1px solid #1f2937',padding:'8px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,gap:12}}>
+        <div style={{fontSize:'1.15rem',fontWeight:900,color:'#fbbf24',whiteSpace:'nowrap'}}>🏆 英文搶答</div>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{color:tColor,fontFamily:'monospace',fontSize:'3.6rem',lineHeight:1,fontWeight:900,width:'2.6ch',textAlign:'center',textShadow:tShadow,transition:'color 0.3s,text-shadow 0.3s'}}>{String(timer).padStart(2,'0')}</div>
+          <span style={{color:'#6b7280',fontSize:'0.88rem',fontWeight:700}}>秒</span>
+          <button onClick={()=>setRunning(r=>!r)} style={{padding:'7px 16px',borderRadius:9,fontWeight:900,fontSize:'0.95rem',border:'none',cursor:'pointer',background:running?'#ea580c':'#16a34a',color:'#fff'}}>{running?'⏸ 暫停':'▶ 開始'}</button>
+          <button onClick={resetTimer} style={{padding:'7px 12px',borderRadius:9,fontWeight:700,fontSize:'0.95rem',border:'1px solid #374151',cursor:'pointer',background:'#1f2937',color:'#d1d5db'}}>↺ 重設</button>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{fontSize:'0.95rem',fontWeight:700,color:'#9ca3af',whiteSpace:'nowrap'}}>第 {qIdx+1} / {questions.length} 題</div>
+          <button onClick={()=>onEnd(groups)} style={{padding:'7px 14px',borderRadius:9,fontWeight:800,fontSize:'0.88rem',border:'1px solid #dc2626',cursor:'pointer',background:'rgba(220,38,38,0.15)',color:'#f87171'}}>結束遊戲</button>
+        </div>
+      </div>
+      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+        <div style={{flex:1,display:'flex',flexDirection:'column',padding:'14px 18px',gap:12,overflowY:'auto'}}>
+          <div style={{background:'#1a2035',borderRadius:14,padding:'22px 26px',border:'1px solid #1f2937'}}>
+            <div style={{color:'#fbbf24',fontSize:'0.92rem',fontWeight:700,marginBottom:7}}>第 {qIdx+1} 題 ✦ 每題 10 分</div>
+            <div key={qIdx} className="fade-in" style={{color:'#f9fafb',fontWeight:800,fontSize:'clamp(1.4rem,2.2vw,2rem)',lineHeight:1.35}}>{q.q}</div>
+          </div>
+          <div key={'o'+qIdx} className="fade-in" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,flex:1,minHeight:200}}>
+            {q.opts.map((opt,i)=>{ const correct=showAns&&i===q.ans; return (
+              <div key={i} style={{borderRadius:13,padding:'16px 18px',border:`2px solid ${correct?'#22c55e':'#1f2937'}`,background:correct?'#14532d':'#151e30',display:'flex',alignItems:'center',gap:12,transition:'all 0.3s',transform:correct?'scale(1.02)':'scale(1)',boxShadow:correct?'0 0 24px rgba(34,197,94,0.4)':'none'}}>
+                <div style={{borderRadius:'50%',width:48,height:48,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.4rem',fontWeight:900,background:correct?'#16a34a':'#374151',color:'#fff',transition:'background 0.3s'}}>{ABC[i]}</div>
+                <div style={{fontSize:'clamp(1.1rem,1.7vw,1.5rem)',fontWeight:700,color:'#f9fafb',flex:1,lineHeight:1.3}}>{opt}</div>
+                {correct&&<div style={{fontSize:'1.7rem',flexShrink:0}}>✅</div>}
+              </div>
+            );})}
+          </div>
+          {showAns&&(<div key={'e'+qIdx} className="fade-in" style={{borderRadius:13,padding:'15px 20px',border:'1px solid #854d0e',background:'#1c1304'}}><div style={{color:'#fbbf24',fontWeight:900,fontSize:'0.92rem',marginBottom:5}}>📖 中文解析</div><div style={{color:'#fef3c7',fontWeight:600,fontSize:'clamp(1rem,1.5vw,1.35rem)',lineHeight:1.55}}>{q.exp}</div></div>)}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:2}}>
+            <button onClick={()=>nav(-1)} disabled={qIdx===0} style={{padding:'9px 22px',borderRadius:10,fontWeight:800,fontSize:'1rem',border:'1px solid #374151',cursor:qIdx===0?'not-allowed':'pointer',background:'#1f2937',color:qIdx===0?'#4b5563':'#d1d5db',opacity:qIdx===0?0.4:1}}>← 上一題</button>
+            <button onClick={()=>setShowAns(a=>!a)} style={{padding:'10px 30px',borderRadius:11,fontWeight:900,fontSize:'1.1rem',border:'none',cursor:'pointer',background:showAns?'#6d28d9':'#d97706',color:'#fff',transition:'background 0.2s'}}>{showAns?'🙈 隱藏答案':'👁 顯示答案'}</button>
+            <button onClick={()=>nav(1)} disabled={qIdx===questions.length-1} style={{padding:'9px 22px',borderRadius:10,fontWeight:800,fontSize:'1rem',border:'1px solid #374151',cursor:qIdx===questions.length-1?'not-allowed':'pointer',background:'#1f2937',color:qIdx===questions.length-1?'#4b5563':'#d1d5db',opacity:qIdx===questions.length-1?0.4:1}}>下一題 →</button>
+          </div>
+        </div>
+        <div style={{width:cardMode==='mini'?280:300,background:'#0d1117',borderLeft:'1px solid #1f2937',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',borderBottom:'1px solid #1f2937',flexShrink:0}}>
+            <div style={{color:'#fbbf24',fontWeight:900,fontSize:'0.98rem'}}>🏅 計分板</div>
+            <div style={{color:'#6b7280',fontSize:'0.8rem',fontWeight:600}}>{n} 組</div>
+          </div>
+          <div style={{flex:1,overflowY:'auto',padding:'8px',display:'flex',flexDirection:'column',gap:cardMode==='mini'?4:7}}>
+            {groups.map((g,idx)=>(<GroupCard key={g.id} g={g} idx={idx} celebId={celebId} popups={popups} onScore={scoreGroup} onRename={renameGroup} editId={editId} setEditId={setEditId} editName={editName} setEditName={setEditName} mode={cardMode}/>))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EndScreen({groups,onRestart}){
+  const [saved,setSaved]=useState(false);
+  const [saveErr,setSaveErr]=useState('');
+  const sorted=[...groups].sort((a,b)=>b.score-a.score);
+  const handleDownload=()=>{
+    try{
+      const XLSX=window.XLSX;
+      if(!XLSX){setSaveErr('⚠️ SheetJS 未載入');return;}
+      const now=new Date();
+      const data=sorted.map((g,i)=>({'名次':i+1,'小組名稱':g.name,'得分':g.score,'日期':now.toLocaleDateString('zh-TW'),'時間':now.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}));
+      const ws=XLSX.utils.json_to_sheet(data);
+      ws['!cols']=[{wch:6},{wch:16},{wch:8},{wch:14},{wch:10}];
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'成績記錄');
+      const fname=`成績_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`;
+      XLSX.writeFile(wb,fname);
+      setSaved(true);
+      launchConfetti();
+    }catch(e){setSaveErr('下載失敗：'+e.message);}
+  };
+  const medals=['🥇','🥈','🥉'];
+  const medalColors=['#FFD700','#C0C0C0','#CD7F32'];
+  return (
+    <div style={{minHeight:'100vh',background:'#0a0e1a',color:'#fff',padding:'36px 24px',fontFamily:"'Segoe UI',system-ui,sans-serif",display:'flex',flexDirection:'column',alignItems:'center',overflowY:'auto'}}>
+      <div className="slide-up" style={{textAlign:'center',marginBottom:32}}>
+        <div style={{fontSize:'4rem'}}>🏆</div>
+        <div style={{fontSize:'2.6rem',fontWeight:900,color:'#fbbf24',marginTop:8}}>遊戲結束！</div>
+      </div>
+      <div style={{width:'100%',maxWidth:620,display:'flex',flexDirection:'column',gap:8,marginBottom:30}}>
+        {sorted.map((g,i)=>(<div key={g.id} className="slide-up" style={{animationDelay:`${i*0.05}s`,background:i===0?'#1c1500':i===1?'#141414':i===2?'#150e00':'#111827',borderRadius:13,padding:'14px 20px',border:`1px solid ${i<3?medalColors[i]+'55':'#1f2937'}`,display:'flex',alignItems:'center',gap:16}}>
+          <div style={{fontSize:i<3?'2rem':'1.1rem',width:38,textAlign:'center',fontWeight:700,color:'#9ca3af'}}>{i<3?medals[i]:`${i+1}.`}</div>
+          <div style={{flex:1,fontWeight:800,fontSize:'1.2rem',color:'#f9fafb'}}>{g.name}</div>
+          <div style={{fontFamily:'monospace',fontWeight:900,fontSize:'2.1rem',color:i===0?'#FFD700':i===1?'#C0C0C0':i===2?'#CD7F32':'#fff'}}>{g.score}</div>
+          <div style={{color:'#6b7280',fontSize:'0.85rem',fontWeight:600}}>分</div>
+        </div>))}
+      </div>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12,width:'100%',maxWidth:440}}>
+        {!saved?(<button onClick={handleDownload} style={{width:'100%',padding:'16px 0',borderRadius:14,fontWeight:900,fontSize:'1.2rem',border:'none',cursor:'pointer',background:'#16a34a',color:'#fff',boxShadow:'0 4px 20px rgba(22,163,74,0.4)'}}>💾 下載成績 Excel</button>):(<div style={{width:'100%',padding:'16px 0',borderRadius:14,fontWeight:900,fontSize:'1.05rem',textAlign:'center',background:'rgba(22,163,74,0.15)',border:'1px solid #16a34a',color:'#4ade80'}}>✅ 已下載！</div>)}
+        {saveErr&&<div style={{background:'#450a0a',border:'1px solid #991b1b',borderRadius:10,padding:'12px 16px',color:'#fca5a5',fontSize:'0.9rem',width:'100%',textAlign:'center'}}>{saveErr}</div>}
+        <button onClick={onRestart} style={{width:'100%',padding:'13px 0',borderRadius:13,fontWeight:800,fontSize:'1.05rem',border:'1px solid #374151',cursor:'pointer',background:'#1f2937',color:'#d1d5db'}}>🔄 重新開始</button>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [screen,setScreen]=useState('setup');
+  const [questions,setQuestions]=useState([]);
+  const [gameGroups,setGameGroups]=useState([]);
+  const handleStart=(groups,qs)=>{setGameGroups(groups);setQuestions(qs);setScreen('game');};
+  const handleEnd=finalGroups=>{setGameGroups(finalGroups);setScreen('end');};
+  const handleRestart=()=>{setScreen('setup');setQuestions([]);setGameGroups([]);};
+  if(screen==='setup') return <SetupScreen onStart={handleStart}/>;
+  if(screen==='game') return <GameScreen questions={questions} groups={gameGroups} onEnd={handleEnd}/>;
+  if(screen==='end') return <EndScreen groups={gameGroups} onRestart={handleRestart}/>;
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

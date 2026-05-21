@@ -1,0 +1,20 @@
+# Streamlit secrets（絕對不能 push！）
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# 編輯器
+.vscode/
+.idea/
+
+# 本地修復 Git 時產生的備份
+.git_broken_*/

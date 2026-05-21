@@ -1,0 +1,17 @@
+[
+  {"q": "What is the plural form of \"mouse\"?", "opts": ["mouses", "mice", "mouse", "mices"], "ans": 1, "exp": "\"mouse\" 的複數是不規則變化，正確答案是 \"mice\"（老鼠們）。不能說 \"mouses\"！"},
+  {"q": "Which sentence is correct?", "opts": ["She go to school.", "She goes to school.", "She going to school.", "She goed to school."], "ans": 1, "exp": "第三人稱單數（she/he/it）現在式動詞要加 \"-s/-es\"，所以 \"go\" → \"goes\"。（她每天去學校。）"},
+  {"q": "What does \"beautiful\" mean in Chinese?", "opts": ["高興的", "聰明的", "美麗的", "勇敢的"], "ans": 2, "exp": "\"beautiful\" 意思是「美麗的」。例：She is beautiful.（她很美麗。）"},
+  {"q": "Fill in the blank: I have ___ apple.", "opts": ["a", "an", "the", "some"], "ans": 1, "exp": "\"apple\" 以母音（a）開頭，冠詞要用 \"an\"，不是 \"a\"。規則：母音前用 \"an\"，輔音前用 \"a\"。"},
+  {"q": "What is the past tense of \"go\"?", "opts": ["goed", "goes", "going", "went"], "ans": 3, "exp": "\"go\" 的過去式是不規則變化 \"went\"。例：I went to the park yesterday.（我昨天去了公園。）"},
+  {"q": "What does \"library\" mean in Chinese?", "opts": ["書店", "圖書館", "教室", "操場"], "ans": 1, "exp": "\"library\" 是「圖書館」。書店是 \"bookstore\"，千萬別搞混！"},
+  {"q": "What is the opposite of \"hot\"?", "opts": ["warm", "cool", "cold", "icy"], "ans": 2, "exp": "\"hot\"（熱）的直接反義詞是 \"cold\"（冷）。\"warm\" 是溫暖，\"icy\" 是冰冷。"},
+  {"q": "What does \"delicious\" mean in Chinese?", "opts": ["危險的", "困難的", "美味的", "昂貴的"], "ans": 2, "exp": "\"delicious\" 意思是「美味的」。例：This pizza is delicious!（這個披薩很好吃！）"},
+  {"q": "Choose the correct sentence:", "opts": ["There is two books.", "There are two books.", "There be two books.", "There am two books."], "ans": 1, "exp": "\"two books\" 是複數，be 動詞要用 \"are\"：There are two books.（這裡有兩本書。）"},
+  {"q": "What does \"excited\" mean in Chinese?", "opts": ["疲倦的", "害怕的", "興奮的", "無聊的"], "ans": 2, "exp": "\"excited\" 意思是「興奮的」。例：I am excited about the trip!（我對這次旅行感到非常興奮！）"},
+  {"q": "Which word means \"快樂的\" in English?", "opts": ["angry", "sad", "happy", "tired"], "ans": 2, "exp": "\"happy\" 意思是「快樂的、高興的」。例：I am happy today.（我今天很高興。）"},
+  {"q": "What is the correct question form?", "opts": ["Does she likes cats?", "Does she like cats?", "Do she likes cats?", "Do she like cats?"], "ans": 1, "exp": "助動詞 \"does\" 後面動詞要用原形，所以是 \"Does she like cats?\"（她喜歡貓嗎？）"},
+  {"q": "What does \"homework\" mean in Chinese?", "opts": ["課本", "作業", "考試", "課表"], "ans": 1, "exp": "\"homework\" 是「作業、家庭作業」。例：I finish my homework.（我完成了作業。）"},
+  {"q": "Which sentence uses \"have\" correctly?", "opts": ["She have a dog.", "He have two cats.", "They has a car.", "We have three books."], "ans": 3, "exp": "\"have\" 用在 I/you/we/they 後面，\"has\" 用在 he/she/it 後面。所以 \"We have...\" 是正確的。"},
+  {"q": "What does \"supermarket\" mean in Chinese?", "opts": ["公園", "學校", "超級市場", "醫院"], "ans": 2, "exp": "\"supermarket\" 是「超級市場（超市）」。例：My mom buys food at the supermarket."}
+]
