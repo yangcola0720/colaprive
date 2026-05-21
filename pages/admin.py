@@ -11,6 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utils.sheets import is_configured, load_questions_from_sheets, save_questions_to_sheets
 
 # ── 密碼保護 ──────────────────────────────────────────────
+
+st.write("DEBUG: st.secrets admin=", st.secrets.get("admin"))
+st.write("DEBUG: st.secrets keys=", list(st.secrets.keys()))
+
 def check_password():
     if st.session_state.get("admin_authed"):
         return True
@@ -19,6 +23,8 @@ def check_password():
     pwd = st.text_input("請輸入管理密碼", type="password", key="admin_pwd_input")
     if st.button("登入", use_container_width=True):
         correct = st.secrets.get("admin", {}).get("password", "admin1234")
+        st.write("DEBUG: current cwd=", os.getcwd())
+        st.write("DEBUG: admin secret loaded=", bool(correct), "length=", len(correct))
         if pwd == correct:
             st.session_state["admin_authed"] = True
             st.rerun()
