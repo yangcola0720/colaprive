@@ -3,4 +3,7 @@ gspread>=6.0.0
 google-auth>=2.0.0
 
 # ── garmin-dashboard ─────────────────────────────────────
-# 整合後把它的套件加在這裡
+garminconnect>=0.2.0
+plotly>=5.17.0
+pandas>=2.0.0
+anthropic>=0.40.0
